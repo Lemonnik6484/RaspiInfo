@@ -20,6 +20,7 @@ import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.File;
 
 @Mod(RaspiInfo.MODID)
 public class RaspiInfo {
@@ -29,7 +30,6 @@ public class RaspiInfo {
     public RaspiInfo(FMLJavaModLoadingContext context) {
         IEventBus modEventBus = context.getModEventBus();
         modEventBus.addListener(this::commonSetup);
-
         MinecraftForge.EVENT_BUS.register(this);
     }
 
@@ -55,26 +55,23 @@ public class RaspiInfo {
             OperatingSystemMXBean osBean = (OperatingSystemMXBean)
                     ManagementFactory.getOperatingSystemMXBean();
 
-            double cpuLoad = osBean.getCpuLoad() * 100.0;
-            long totalMem = osBean.getTotalMemorySize();
-            long freeMem = osBean.getFreeMemorySize();
+            double cpuLoad = osBean.getSystemCpuLoad() * 100.0;
+            long totalMem = osBean.getTotalPhysicalMemorySize();
+            long freeMem = osBean.getFreePhysicalMemorySize();
             long usedMem = totalMem - freeMem;
 
             double usedMB = usedMem / 1024.0 / 1024.0;
             double totalMB = totalMem / 1024.0 / 1024.0;
-
             double cpuTemp = getPiTemp();
 
-            if (cpuTemp < 0) {
-                return String.format(
-                        "§6[SYSINFO]§r CPU: §a%.1f%%§r | Temp: §cUnavailable§r | RAM: §b%.0f / %.0f MB§r",
-                        cpuLoad, usedMB, totalMB
-                );
-            }
+            DiskInfo disk = getDiskInfo();
+
+            String tempDisplay = cpuTemp < 0 ? "Unavailable" : String.format("%.1f°C", cpuTemp);
 
             return String.format(
-                    "§6[SYSINFO]§r CPU: §a%.1f%%§r | Temp: §c%.1f°C§r | RAM: §b%.0f / %.0f MB§r",
-                    cpuLoad, cpuTemp, usedMB, totalMB
+                    "§6[SYSINFO]§r CPU: §a%.1f%%§r | Temp: §c%s§r | RAM: §b%.0f / %.0f MB§r | Disk: §e%.1f / %.1f GB (%.0f%% free)§r",
+                    cpuLoad, tempDisplay, usedMB, totalMB,
+                    disk.usedGB, disk.totalGB, disk.freePercent
             );
         } catch (Exception e) {
             LOGGER.error("Failed to get system info", e);
@@ -101,5 +98,26 @@ public class RaspiInfo {
             LOGGER.warn("Temperature read failed: {}", e.getMessage());
             return -1;
         }
+    }
+
+    private DiskInfo getDiskInfo() {
+        try {
+            File current = new File(".");
+            long total = current.getTotalSpace();
+            long free = current.getFreeSpace();
+            long used = total - free;
+
+            double totalGB = total / 1024.0 / 1024.0 / 1024.0;
+            double usedGB = used / 1024.0 / 1024.0 / 1024.0;
+            double freePercent = (free * 100.0) / total;
+
+            return new DiskInfo(usedGB, totalGB, freePercent);
+        } catch (Exception e) {
+            LOGGER.warn("Disk info read failed: {}", e.getMessage());
+            return new DiskInfo(0, 0, 0);
+        }
+    }
+
+    private record DiskInfo(double usedGB, double totalGB, double freePercent) {
     }
 }
